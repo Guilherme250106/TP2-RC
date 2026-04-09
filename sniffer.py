@@ -16,7 +16,6 @@ import sys
 
 from scapy.sendrecv import sniff
 from scapy.arch import get_if_list
-from scapy.config import conf
 
 from parser import parse_packet
 from filters import PacketFilter
@@ -31,6 +30,7 @@ _packet_count  = 0       # Número total de pacotes capturados nesta sessão
 _filter: PacketFilter    # Filtro ativo
 _logger: PacketLogger | None = None   # Logger (None se modo log não estiver ativo)
 _live: bool = True       # Se True, imprime no terminal
+_iface: str = "?"        # Nome da interface guardado aqui em vez de conf.iface
 
 
 # =============================================================================
@@ -105,9 +105,9 @@ def _packet_callback(pkt):
     2. Aplica os filtros.
     3. Se passou: exibe no terminal e/ou guarda em ficheiro.
     """
-    global _packet_count, _filter, _logger, _live
+    global _packet_count, _filter, _logger, _live, _iface
 
-    parsed = parse_packet(pkt, iface=conf.iface)
+    parsed = parse_packet(pkt, iface=_iface)
     if parsed is None:
         return  # Pacote sem Ethernet — ignorar
 
@@ -240,8 +240,9 @@ def main():
         arg_parser.error("É obrigatório especificar uma interface com -i/--iface "
                          "(ou usar --list para ver as disponíveis).")
 
-    # --- Configurar interface no Scapy ---
-    conf.iface = args.iface
+    # --- Guardar nome da interface na variável global ---
+    global _iface
+    _iface = args.iface
 
     # --- Configurar filtros ---
     _filter = PacketFilter(
