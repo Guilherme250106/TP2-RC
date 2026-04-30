@@ -130,16 +130,26 @@ def _parse_arp(pkt, base: dict) -> dict:
     """
     Analisa a camada ARP.
     ARP (Address Resolution Protocol) mapeia endereços IP em endereços MAC.
-    Campos principais: op (1=request, 2=reply), psrc/pdst (IPs), hwsrc/hwdst (MACs).
     """
     arp = pkt[ARP]
     base["protocol"] = "ARP"
-    base["src_mac"]  = arp.hwsrc
-    base["dst_mac"]  = arp.hwdst
-    base["src_ip"]   = arp.psrc
-    base["dst_ip"]   = arp.pdst
-    base["summary"]  = ARP_OP.get(arp.op, f"ARP op={arp.op}") + \
-                       f" | {arp.psrc} -> {arp.pdst}"
+    
+    # Já não reescrevemos o src_mac e dst_mac aqui! 
+    # Deixamos o programa usar os MACs reais da camada Ethernet (o envelope)
+    # que já foram guardados na variável 'base' pela função principal.
+    
+    # TRUQUE: Deixamos o IP vazio para forçar a tabela a mostrar os MACs Ethernet!
+    base["src_ip"]   = ""
+    base["dst_ip"]   = ""
+    
+    # Sumário clássico do Wireshark
+    if arp.op == 1:
+        base["summary"] = f"ARP Request | Who has {arp.pdst}? Tell {arp.psrc}"
+    elif arp.op == 2:
+        base["summary"] = f"ARP Reply | {arp.psrc} is at {arp.hwsrc}"
+    else:
+        base["summary"] = f"ARP op={arp.op} | {arp.psrc} -> {arp.pdst}"
+        
     return base
 
 
