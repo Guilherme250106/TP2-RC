@@ -117,7 +117,7 @@ cfg = {
 
 def _draw_header():
     print(_c(BOLD + CYAN, "╔══════════════════════════════════════════════╗"))
-    print(_c(BOLD + CYAN, "║   Packet Sniffer — RC TP2  |  LEI UMinho    ║"))
+    print(_c(BOLD + CYAN, "║   Packet Sniffer — RC TP2  |  LEI UMinho     ║"))
     print(_c(BOLD + CYAN, "╚══════════════════════════════════════════════╝"))
     print()
 

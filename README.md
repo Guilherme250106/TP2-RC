@@ -3,17 +3,10 @@
 
 ---
 
-## Dependências
-
-Python 3.10+ e a biblioteca [Scapy](https://scapy.net/):
-
-```bash
+python3 -m venv sniffer-env
+source sniffer-env/bin/activate
 pip install scapy
-```
-
-> A captura de pacotes numa interface real requer permissões de root/administrador.
-
----
+sudo -E sniffer-env/bin/python menu.py
 
 ## Estrutura do Projeto
 

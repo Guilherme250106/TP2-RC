@@ -33,7 +33,7 @@ end
 # Unset irrelevant variables.
 deactivate nondestructive
 
-set -gx VIRTUAL_ENV /home/guilherme-meireles-baptista/RCTP2/TP2-RC/sniffer-env
+set -gx VIRTUAL_ENV /home/matteo/Prog/RC/TP2-RC/sniffer-env
 
 set -gx _OLD_VIRTUAL_PATH $PATH
 set -gx PATH "$VIRTUAL_ENV/"bin $PATH
