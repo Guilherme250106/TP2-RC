@@ -3,10 +3,27 @@
 
 ---
 
+# 1) Criar virtualenv na pasta do projeto
+cd /home/matteo/Prog/RC/TP2-RC
 python3 -m venv sniffer-env
+
+# 2) Ativar o ambiente
 source sniffer-env/bin/activate
+
+# 3) Verificar que está ativo (prompt muda para começar com (sniffer-env))
+which python3
+
+# 4) Instalar dependências
+pip install --upgrade pip
 pip install scapy
+
+# 5) Verificar instalação
+python3 -c "import scapy; print('Scapy OK')"
+
+# 6) Correr o programa
 sudo -E sniffer-env/bin/python menu.py
+
+---
 
 ## Estrutura do Projeto
 
