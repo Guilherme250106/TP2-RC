@@ -1,393 +1,181 @@
+# ...existing code...
 """
-parser.py — Módulo de parsing e identificação de protocolos
-Analisa pacotes Scapy e extrai informação relevante de cada protocolo.
-
-Protocolos suportados:
-  Camada 2: Ethernet, ARP
-  Camada 3: IPv4, IPv6, ICMP, ICMPv6
-  Camada 4: TCP, UDP
-  Camada 7: DNS, HTTP, DHCP
+parser.py — Módulo de parsing usando os parsers manuais (defensivo)
 """
 
 from datetime import datetime
-from scapy.layers.l2 import Ether, ARP
-from scapy.layers.inet import IP, ICMP, TCP, UDP
-from scapy.packet import Raw
+from scapy.layers.l2 import Ether  # apenas para checar que é um pacote L2 scapy
+from scapy.packet import Packet  # tipagem mínima
+import traceback
 
-# IPv6 e DNS/DHCP importados com fallback (podem falhar em ambientes sem IPv6)
+# Import dos parsers manuais — obrigatórios para este ficheiro funcionar
 try:
-    from scapy.layers.inet6 import IPv6, ICMPv6EchoRequest, ICMPv6EchoReply
-    _HAS_IPV6 = True
-except Exception:
-    _HAS_IPV6 = False
-    IPv6 = None
-    ICMPv6EchoRequest = None
-    ICMPv6EchoReply = None
-
-try:
-    from scapy.layers.dns import DNS, DNSQR, DNSRR
-    _HAS_DNS = True
-except Exception:
-    _HAS_DNS = False
-    DNS = None
-
-try:
-    from scapy.layers.dhcp import DHCP, BOOTP
-    _HAS_DHCP = True
-except Exception:
-    _HAS_DHCP = False
-    DHCP = None
-    BOOTP = None
-
+    from parse_ethernet import parse_ethernet
+    from parse_ipv4 import parse_ipv4
+    from parse_ipv6 import parse_ipv6
+    from parse_arp import parse_arp as parse_arp_manual
+    from parse_tcp import parse_tcp as parse_tcp_manual
+    from parse_udp import parse_udp as parse_udp_manual
+    from parse_dns import parse_dns as parse_dns_manual
+    from parse_dhcp import parse_dhcp as parse_dhcp_manual
+    _HAS_MANUAL = True
+    _MANUAL_IMPORT_ERROR = None
+except Exception as e:
+    _HAS_MANUAL = False
+    _MANUAL_IMPORT_ERROR = e
 
 # =============================================================================
-# CONSTANTES DE APOIO
+# FUNÇÃO PRINCIPAL DE PARSING (USANDO PARSERS MANUAIS)
 # =============================================================================
 
-# Mapeamento dos tipos ARP para descrição legível
-ARP_OP = {1: "ARP Request", 2: "ARP Reply"}
-
-# Mapeamento dos tipos/códigos ICMP mais comuns
-ICMP_TYPES = {
-    0:  "Echo Reply",
-    3:  "Destination Unreachable",
-    5:  "Redirect",
-    8:  "Echo Request",
-    11: "Time Exceeded",
-}
-
-# Mapeamento das flags TCP (bitmask)
-TCP_FLAGS = {
-    "F": "FIN",
-    "S": "SYN",
-    "R": "RST",
-    "P": "PSH",
-    "A": "ACK",
-    "U": "URG",
-}
-
-# Portas TCP/UDP associadas a protocolos aplicacionais conhecidos
-WELL_KNOWN_PORTS = {
-    80:   "HTTP",
-    443:  "HTTPS",
-    53:   "DNS",
-    67:   "DHCP",
-    68:   "DHCP",
-    22:   "SSH",
-    21:   "FTP",
-    25:   "SMTP",
-    110:  "POP3",
-    143:  "IMAP",
-    123:  "NTP",
-}
-
-# Tipos de mensagens DHCP (opção 53)
-DHCP_MSG_TYPES = {
-    1: "DHCP Discover",
-    2: "DHCP Offer",
-    3: "DHCP Request",
-    4: "DHCP Decline",
-    5: "DHCP ACK",
-    6: "DHCP NAK",
-    7: "DHCP Release",
-    8: "DHCP Inform",
-}
-
-
-# =============================================================================
-# FUNÇÕES AUXILIARES
-# =============================================================================
-
-def _flags_str(flags) -> str:
-    """Converte flags TCP (objeto Scapy) numa string legível, ex: 'SYN ACK'."""
-    result = []
-    for char, name in TCP_FLAGS.items():
-        if char in str(flags):
-            result.append(name)
-    return " ".join(result) if result else "NONE"
-
-
-def _port_hint(port: int) -> str:
-    """Devolve o nome do protocolo associado a uma porta, ou a porta em si."""
-    return WELL_KNOWN_PORTS.get(port, str(port))
-
-
-def _get_dhcp_msg_type(dhcp_layer) -> str:
-    """Extrai o tipo de mensagem DHCP da camada DHCP do Scapy."""
-    if dhcp_layer is None:
-        return "DHCP"
-    for opt in dhcp_layer.options:
-        if isinstance(opt, tuple) and opt[0] == "message-type":
-            return DHCP_MSG_TYPES.get(opt[1], f"DHCP Type {opt[1]}")
-    return "DHCP"
-
-
-# =============================================================================
-# FUNÇÕES DE PARSING POR PROTOCOLO
-# =============================================================================
-
-def _parse_arp(pkt, base: dict) -> dict:
-    """
-    Analisa a camada ARP.
-    ARP (Address Resolution Protocol) mapeia endereços IP em endereços MAC.
-    """
-    arp = pkt[ARP]
-    base["protocol"] = "ARP"
-    
-    # Já não reescrevemos o src_mac e dst_mac aqui! 
-    # Deixamos o programa usar os MACs reais da camada Ethernet (o envelope)
-    # que já foram guardados na variável 'base' pela função principal.
-    
-    # TRUQUE: Deixamos o IP vazio para forçar a tabela a mostrar os MACs Ethernet!
-    base["src_ip"]   = ""
-    base["dst_ip"]   = ""
-    
-    # Sumário clássico do Wireshark
-    if arp.op == 1:
-        base["summary"] = f"ARP Request | Who has {arp.pdst}? Tell {arp.psrc}"
-    elif arp.op == 2:
-        base["summary"] = f"ARP Reply | {arp.psrc} is at {arp.hwsrc}"
-    else:
-        base["summary"] = f"ARP op={arp.op} | {arp.psrc} -> {arp.pdst}"
-        
-    return base
-
-
-def _parse_icmp(pkt, base: dict) -> dict:
-    """
-    Analisa a camada ICMP (sobre IPv4).
-    ICMP é usado para diagnóstico de rede (ping, erros de routing, etc.).
-    Campos principais: type (tipo da mensagem), code, id, seq.
-    """
-    icmp = pkt[ICMP]
-    base["protocol"] = "ICMP"
-    type_str = ICMP_TYPES.get(icmp.type, f"Type {icmp.type}")
-
-    # Para Echo Request/Reply, incluímos id e sequência
-    if icmp.type in (0, 8):
-        base["summary"] = f"{type_str} | id={icmp.id} seq={icmp.seq}"
-    else:
-        base["summary"] = f"{type_str} | code={icmp.code}"
-    return base
-
-
-def _parse_dns(pkt, base: dict) -> dict:
-    """
-    Analisa a camada DNS (tipicamente sobre UDP porta 53).
-    DNS resolve nomes de domínio em endereços IP.
-    QR=0 significa Query, QR=1 significa Response.
-    """
-    dns = pkt[DNS]
-    base["protocol"] = "DNS"
-    is_response = dns.qr == 1
-
-    if is_response:
-        # Resposta: listar os registos devolvidos
-        answers = []
-        for i in range(dns.ancount):
-            rr = dns.an[i]
-            if hasattr(rr, "rdata"):
-                answers.append(str(rr.rdata))
-        answers_str = ", ".join(answers) if answers else "sem registos"
-        # Nome da query (se disponível)
-        qname = dns.qd.qname.decode() if dns.qd else "?"
-        base["summary"] = f"DNS Response | {qname} -> {answers_str}"
-    else:
-        # Query: mostrar o nome pedido
-        qname = dns.qd.qname.decode() if dns.qd else "?"
-        base["summary"] = f"DNS Query | {qname}"
-
-    return base
-
-
-def _parse_dhcp(pkt, base: dict) -> dict:
-    """
-    Analisa a camada DHCP (sobre UDP portas 67/68).
-    DHCP atribui endereços IP automaticamente.
-    Fases principais: Discover -> Offer -> Request -> ACK (DORA).
-    """
-    dhcp = pkt[DHCP] if DHCP in pkt else None
-    bootp = pkt[BOOTP] if BOOTP in pkt else None
-    msg_type = _get_dhcp_msg_type(dhcp)
-    base["protocol"] = "DHCP"
-
-    # O BOOTP contém o IP proposto (yiaddr) e o IP do cliente (ciaddr)
-    if bootp:
-        yiaddr = bootp.yiaddr  # IP oferecido/atribuído
-        ciaddr = bootp.ciaddr  # IP do cliente (se já tem)
-        xid    = hex(bootp.xid)  # Transaction ID (identifica a sessão DORA)
-        base["summary"] = f"{msg_type} | xid={xid} offered={yiaddr} client={ciaddr}"
-    else:
-        base["summary"] = msg_type
-
-    return base
-
-
-def _parse_http(pkt, base: dict) -> dict:
-    """
-    Analisa tráfego HTTP (TCP porta 80) a partir do payload Raw.
-    HTTP é um protocolo de texto — tentamos ler a primeira linha do pedido/resposta.
-    """
-    base["protocol"] = "TCP/HTTP"
+def _safe_call(fn, *args, **kwargs):
+    """Chama fn de forma segura; captura exceções e devolve None em caso de erro."""
     try:
-        payload = bytes(pkt[Raw].load).decode("utf-8", errors="replace")
-        first_line = payload.split("\r\n")[0][:80]  # Limite de 80 chars
-        base["summary"] = f"HTTP | {first_line}"
+        return fn(*args, **kwargs)
     except Exception:
-        base["summary"] = "HTTP (payload ilegível)"
-    return base
+        # não propagar exceções de parsing para o sniffer
+        # para debug, poderíamos registar traceback noutro lugar
+        return None
 
-
-def _parse_tcp(pkt, base: dict) -> dict:
+def parse_packet(pkt: Packet, iface: str = "?") -> dict | None:
     """
-    Analisa a camada TCP.
-    TCP é orientado à conexão — usa flags (SYN/ACK/FIN/RST) para gerir o ciclo de vida.
-    Campos principais: sport, dport, seq, ack, flags.
+    Recebe um pacote Scapy e devolve um dicionário com informação extraída
+    usando os parsers manuais (parse_*.py). Não usa as funções de parsing do Scapy.
+    Em caso de erro interno, retorna um resumo mínimo em vez de lançar.
     """
-    tcp = pkt[TCP]
-    flags = _flags_str(tcp.flags)
-    src_port = tcp.sport
-    dst_port = tcp.dport
+    if not _HAS_MANUAL:
+        raise RuntimeError("Parsers manuais não disponíveis: " + repr(_MANUAL_IMPORT_ERROR))
 
-    # Verificar se é HTTP (porta 80) e há payload
-    if (src_port == 80 or dst_port == 80) and Raw in pkt:
-        return _parse_http(pkt, base)
+    # verificar que é um pacote Scapy com camada L2 (Ethernet)
+    if not isinstance(pkt, Packet) or Ether not in pkt:
+        return None
 
-    # Protocolo aplicacional pela porta (se conhecido)
-    app_proto = WELL_KNOWN_PORTS.get(dst_port) or WELL_KNOWN_PORTS.get(src_port, "")
-    proto_label = f"TCP/{app_proto}" if app_proto else "TCP"
+    raw = bytes(pkt)
 
-    base["protocol"] = proto_label
-    base["summary"]  = (
-        f"{flags} | "
-        f"{src_port} -> {dst_port} | "
-        f"seq={tcp.seq} ack={tcp.ack}"
-    )
-    return base
+    eth = _safe_call(parse_ethernet, raw)
+    if not eth:
+        # devolve resumo L2 mínimo
+        return {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
+            "interface": iface,
+            "protocol": "Ethernet",
+            "src_mac": "",
+            "dst_mac": "",
+            "src_ip": "",
+            "dst_ip": "",
+            "size": len(raw),
+            "summary": "Ethernet parsing failed",
+        }
 
-
-def _parse_udp(pkt, base: dict) -> dict:
-    """
-    Analisa a camada UDP.
-    UDP não é orientado à conexão — simples, rápido, sem garantias de entrega.
-    DHCP e DNS usam UDP tipicamente.
-    """
-    udp = pkt[UDP]
-
-    # Sub-protocolos sobre UDP
-    if _HAS_DNS and DNS in pkt:
-        base = _parse_dns(pkt, base)
-        return base
-
-    if _HAS_DHCP and (DHCP in pkt or BOOTP in pkt):
-        base = _parse_dhcp(pkt, base)
-        return base
-
-    # UDP genérico
-    app_proto = WELL_KNOWN_PORTS.get(udp.dport) or WELL_KNOWN_PORTS.get(udp.sport, "")
-    proto_label = f"UDP/{app_proto}" if app_proto else "UDP"
-
-    base["protocol"] = proto_label
-    base["summary"]  = f"{udp.sport} -> {udp.dport} | len={udp.len}"
-    return base
-
-
-def _parse_ipv6(pkt, base: dict) -> dict:
-    """
-    Analisa a camada IPv6.
-    Extrai endereços de origem/destino e identifica o próximo protocolo.
-    """
-    ip6 = pkt[IPv6]
-    base["src_ip"] = ip6.src
-    base["dst_ip"] = ip6.dst
-
-    if TCP in pkt:
-        base = _parse_tcp(pkt, base)
-        base["protocol"] = "IPv6/" + base.get("protocol", "TCP")
-    elif UDP in pkt:
-        base = _parse_udp(pkt, base)
-        base["protocol"] = "IPv6/" + base.get("protocol", "UDP")
-    elif ICMPv6EchoRequest in pkt:
-        base["protocol"] = "ICMPv6"
-        base["summary"] = "ICMPv6 Echo Request"
-    elif ICMPv6EchoReply in pkt:
-        base["protocol"] = "ICMPv6"
-        base["summary"] = "ICMPv6 Echo Reply"
-    else:
-        base["protocol"] = "IPv6"
-        base["summary"] = f"IPv6 nh={ip6.nh}"
-
-    return base
-
-
-def _parse_ipv4(pkt, base: dict) -> dict:
-    """
-    Analisa a camada IPv4.
-    Extrai endereços IP e delega para o protocolo de camada superior.
-    """
-    ip = pkt[IP]
-    base["src_ip"] = ip.src
-    base["dst_ip"] = ip.dst
-
-    if ICMP in pkt:
-        base = _parse_icmp(pkt, base)
-    elif TCP in pkt:
-        base = _parse_tcp(pkt, base)
-    elif UDP in pkt:
-        base = _parse_udp(pkt, base)
-    else:
-        base["protocol"] = "IPv4"
-        base["summary"]  = f"Proto={ip.proto}"
-
-    return base
-
-
-# =============================================================================
-# FUNÇÃO PRINCIPAL DE PARSING
-# =============================================================================
-
-def parse_packet(pkt, iface: str = "?") -> dict | None:
-    """
-    Ponto de entrada principal: recebe um pacote Scapy e devolve um dicionário
-    com toda a informação relevante extraída.
-
-    Args:
-        pkt:        Pacote Scapy capturado.
-        iface (str): Nome da interface de rede onde foi capturado.
-
-    Returns:
-        dict com os campos: timestamp, interface, protocol, src_mac, dst_mac,
-                            src_ip, dst_ip, size, summary.
-        None se o pacote não tiver camada Ethernet (raro, mas possível).
-    """
-    if Ether not in pkt:
-        return None  # Ignorar pacotes sem cabeçalho Ethernet
-
-    eth = pkt[Ether]
-
-    # Estrutura base — campos comuns a todos os pacotes
     base = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
         "interface": iface,
-        "protocol":  "Ethernet",   # será sobrescrito pelas camadas superiores
-        "src_mac":   eth.src,
-        "dst_mac":   eth.dst,
-        "src_ip":    "",
-        "dst_ip":    "",
-        "size":      len(pkt),
-        "summary":   "",
+        "protocol": "Ethernet",
+        "src_mac": eth.get("src_mac", ""),
+        "dst_mac": eth.get("dst_mac", ""),
+        "src_ip": "",
+        "dst_ip": "",
+        "size": len(raw),
+        "summary": "",
     }
 
-    # Delegar parsing para a camada de rede correta
-    if ARP in pkt:
-        base = _parse_arp(pkt, base)
-    elif IP in pkt:
-        base = _parse_ipv4(pkt, base)
-    elif _HAS_IPV6 and IPv6 is not None and IPv6 in pkt:
-        base = _parse_ipv6(pkt, base)
-    else:
-        # Protocolo de camada 2 desconhecido (ex: CDP, STP, etc.)
-        base["protocol"] = f"L2 (ethertype={hex(eth.type)})"
-        base["summary"]  = "Protocolo não identificado"
+    ethertype = eth.get("ethertype")
+    payload = eth.get("payload", b"")
 
+    # ARP
+    if ethertype == 0x0806:
+        arp = _safe_call(parse_arp_manual, payload)
+        if arp:
+            base.update({
+                "protocol": "ARP",
+                "summary": arp.get("summary", ""),
+                "src_mac": arp.get("sha", base["src_mac"]),
+                "dst_mac": arp.get("tha", base["dst_mac"]),
+                "src_ip": arp.get("spa", ""),
+                "dst_ip": arp.get("tpa", ""),
+            })
+        else:
+            base["summary"] = "ARP parsing failed"
+        return base
+
+    # IPv4
+    if ethertype == 0x0800:
+        ip = _safe_call(parse_ipv4, payload)
+        if not ip:
+            base["summary"] = "IPv4 parsing failed"
+            return base
+        base["src_ip"] = ip.get("src_ip", "")
+        base["dst_ip"] = ip.get("dst_ip", "")
+        proto = ip.get("proto")
+
+        if proto == 6:  # TCP
+            tcp = _safe_call(parse_tcp_manual, ip.get("inner_payload", b""))
+            if tcp:
+                base.update({
+                    "protocol": f"TCP/{tcp.get('app_proto','')}" if tcp.get("app_proto") else "TCP",
+                    "summary": tcp.get("summary",""),
+                    "src_port": tcp.get("src_port"),
+                    "dst_port": tcp.get("dst_port"),
+                })
+            else:
+                base.update({"protocol": "TCP", "summary": "TCP parsing failed"})
+            return base
+
+        if proto == 17:  # UDP
+            udp = _safe_call(parse_udp_manual, ip.get("inner_payload", b""))
+            if not udp:
+                base.update({"protocol": "UDP", "summary": "UDP parsing failed"})
+                return base
+            app = udp.get("app_proto")
+            base.update({
+                "protocol": f"UDP/{app}" if app else "UDP",
+                "summary": udp.get("summary",""),
+                "src_port": udp.get("src_port"),
+                "dst_port": udp.get("dst_port"),
+            })
+            if app == "DNS":
+                dns = _safe_call(parse_dns_manual, udp.get("inner_payload", b""))
+                if dns:
+                    base.update({"protocol":"DNS","summary":dns.get("summary","")})
+            if app == "DHCP":
+                dhcp = _safe_call(parse_dhcp_manual, udp.get("inner_payload", b""))
+                if dhcp:
+                    base["summary"] = dhcp.get("summary", base["summary"])
+            return base
+
+        base.update({
+            "protocol": f"IPv4/{ip.get('proto_name', str(proto))}",
+            "summary": ip.get("summary",""),
+        })
+        return base
+
+    # IPv6
+    if ethertype == 0x86DD:
+        ip6 = _safe_call(parse_ipv6, payload)
+        if not ip6:
+            base["summary"] = "IPv6 parsing failed"
+            return base
+        base["src_ip"] = ip6.get("src_ip","")
+        base["dst_ip"] = ip6.get("dst_ip","")
+        nh = ip6.get("next_header")
+        if nh == 6:
+            tcp = _safe_call(parse_tcp_manual, ip6.get("inner_payload", b""))
+            if tcp:
+                base.update({"protocol": "IPv6/TCP", "summary": tcp.get("summary","")})
+            else:
+                base.update({"protocol": "IPv6/TCP", "summary": "TCP parsing failed"})
+            return base
+        if nh == 17:
+            udp = _safe_call(parse_udp_manual, ip6.get("inner_payload", b""))
+            if udp:
+                base.update({"protocol": "IPv6/UDP", "summary": udp.get("summary","")})
+            else:
+                base.update({"protocol": "IPv6/UDP", "summary": "UDP parsing failed"})
+            return base
+        base.update({"protocol": f"IPv6/{ip6.get('next_header_name','')}", "summary": ip6.get("summary","")})
+        return base
+
+    base["protocol"] = f"L2 (ethertype={hex(ethertype) if ethertype is not None else 'unknown'})"
+    base["summary"] = "Protocolo não reconhecido pelo parser manual"
     return base
+# ...existing code...
