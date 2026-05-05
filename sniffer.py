@@ -1,4 +1,3 @@
-
 """
 sniffer.py — Ponto de entrada do Packet Sniffer
 Mantém a lógica atual (callback robusto, parsers manuais, PacketLogger) mas

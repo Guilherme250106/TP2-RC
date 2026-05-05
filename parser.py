@@ -18,6 +18,7 @@ try:
     from parse_udp import parse_udp as parse_udp_manual
     from parse_dns import parse_dns as parse_dns_manual
     from parse_dhcp import parse_dhcp as parse_dhcp_manual
+    from parse_icmp import parse_icmp as parse_icmp_manual
     _HAS_MANUAL = True
     _MANUAL_IMPORT_ERROR = None
 except Exception as e:
@@ -107,6 +108,17 @@ def parse_packet(pkt: Packet, iface: str = "?") -> dict | None:
         base["src_ip"] = ip.get("src_ip", "")
         base["dst_ip"] = ip.get("dst_ip", "")
         proto = ip.get("proto")
+
+        if proto == 1:  # ICMP
+            icmp = _safe_call(parse_icmp_manual, ip.get("inner_payload", b""))
+            if icmp:
+                base.update({
+                    "protocol": "IPv4/ICMP",
+                    "summary": icmp.get("summary", "")
+                })
+            else:
+                base.update({"protocol": "IPv4/ICMP", "summary": "ICMP parsing failed"})
+            return base
 
         if proto == 6:  # TCP
             tcp = _safe_call(parse_tcp_manual, ip.get("inner_payload", b""))
