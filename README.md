@@ -3,25 +3,42 @@
 
 ---
 
-# 1) Criar virtualenv na pasta do projeto
-cd /home/matteo/Prog/RC/TP2-RC
+## Instalação
+
+> Requer Python 3.10+. Verificar com `python3 --version`.
+
+**1. Criar e ativar o ambiente virtual**
+
+```bash
+cd /caminho/para/o/projeto
 python3 -m venv sniffer-env
-
-# 2) Ativar o ambiente
 source sniffer-env/bin/activate
+```
 
-# 3) Verificar que está ativo (prompt muda para começar com (sniffer-env))
+**2. Verificar que o ambiente está ativo** (o prompt passa a começar com `(sniffer-env)`)
+
+```bash
 which python3
+```
 
-# 4) Instalar dependências
+**3. Instalar dependências**
+
+```bash
 pip install --upgrade pip
 pip install scapy
+```
 
-# 5) Verificar instalação
+**4. Verificar instalação**
+
+```bash
 python3 -c "import scapy; print('Scapy OK')"
+```
 
-# 6) Correr o programa
+**5. Executar**
+
+```bash
 sudo -E sniffer-env/bin/python menu.py
+```
 
 ---
 
@@ -29,12 +46,21 @@ sudo -E sniffer-env/bin/python menu.py
 
 ```
 sniffer/
-├── menu.py      — Interface interativa no terminal (recomendado)
-├── sniffer.py   — Ponto de entrada CLI + função run_capture() reutilizável
-├── parser.py    — Parsing e identificação de protocolos
-├── filters.py   — Filtragem de pacotes + deteção de conflitos BPF/proto
-├── logger.py    — Logging para ficheiro (.txt/.csv/.json)
-└── README.md    — Este ficheiro
+├── menu.py           — Interface interativa no terminal (recomendado)
+├── sniffer.py        — Ponto de entrada CLI + função run_capture() reutilizável
+├── parser.py         — Orquestrador do parsing — coordena a cadeia de parsers manuais
+├── parse_ethernet.py — Parser manual da camada Ethernet (camada 2)
+├── parse_arp.py      — Parser manual do protocolo ARP
+├── parse_ipv4.py     — Parser manual do cabeçalho IPv4
+├── parse_ipv6.py     — Parser manual do cabeçalho IPv6
+├── parse_icmp.py     — Parser manual do protocolo ICMP
+├── parse_tcp.py      — Parser manual do protocolo TCP e HTTP
+├── parse_udp.py      — Parser manual do protocolo UDP
+├── parse_dns.py      — Parser manual do protocolo DNS
+├── parse_dhcp.py     — Parser manual do protocolo DHCP/BOOTP
+├── filters.py        — Filtragem de pacotes + deteção de conflitos BPF/proto
+├── logger.py         — Logging para ficheiro (.txt/.csv/.json)
+└── README.md         — Este ficheiro
 ```
 
 ---
@@ -82,16 +108,16 @@ O menu apresenta a configuração atual e quatro opções antes de iniciar a cap
 
 **Presets disponíveis:**
 
-| Preset         | Protocolo | Filtro BPF              | Como gerar tráfego                     |
-|----------------|-----------|-------------------------|----------------------------------------|
-| Ping / ICMP    | ICMP      | `icmp`                  | `ping <ip>`                            |
-| ARP            | ARP       | `arp`                   | Qualquer comunicação nova na LAN       |
-| DNS            | DNS       | `udp port 53`           | `nslookup google.com` ou abrir browser |
-| HTTP           | HTTP      | `tcp port 80`           | `curl http://example.com`              |
-| DHCP           | DHCP      | `udp port 67 or 68`     | Desligar e ligar a interface de rede   |
-| TCP completo   | TCP       | `tcp`                   | Qualquer ligação TCP                   |
-| UDP genérico   | UDP       | `udp`                   | DNS, DHCP, qualquer tráfego UDP        |
-| Tudo           | —         | —                       | Qualquer tráfego                       |
+| Preset         | Protocolo | Filtro BPF                    | Como gerar tráfego                     |
+|----------------|-----------|-------------------------------|----------------------------------------|
+| Ping / ICMP    | ICMP      | `icmp`                        | `ping <ip>`                            |
+| ARP            | ARP       | `arp`                         | Qualquer comunicação nova na LAN       |
+| DNS            | DNS       | `udp port 53`                 | `nslookup google.com` ou abrir browser |
+| HTTP           | HTTP      | `tcp port 80`                 | `curl http://example.com`              |
+| DHCP           | DHCP      | `udp port 67 or udp port 68`  | Desligar e ligar a interface de rede   |
+| TCP completo   | TCP       | `tcp`                         | Qualquer ligação TCP                   |
+| UDP genérico   | UDP       | `udp`                         | DNS, DHCP, qualquer tráfego UDP        |
+| Tudo           | —         | —                             | Qualquer tráfego                       |
 
 Para filtros adicionais (IP, MAC, BPF personalizado, log, count) usa a opção `3` ou `4` antes de iniciar.
 
@@ -198,7 +224,7 @@ cd /path/to/sniffer
 python3 sniffer.py -i eth0
 ```
 
-> No CORE, os nós correm como root — não é necessário `sudo`.
+> No CORE, os nós correm como root — não é necessário `sudo` nem virtualenv.
 > Para usar o menu interativo no CORE, o processo é o mesmo:
 
 ```bash
